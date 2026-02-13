@@ -96,5 +96,26 @@ class ScannerTests(unittest.TestCase):
         self.assertGreaterEqual(events[-1].scanned_messages, 1)
         self.assertGreaterEqual(events[-1].matched_count, 1)
 
+    def test_run_scan_can_be_stopped(self) -> None:
+        config = AppConfig(
+            selected_chats=["@jobs", "@jobs2"],
+            job_profile=JobProfileSettings(
+                title_keywords=["директор"],
+                profile_keywords=["развитие"],
+                industry_keywords=["финтех"],
+                min_match_score=3,
+            ),
+        )
+        calls = {"count": 0}
+
+        def should_stop() -> bool:
+            calls["count"] += 1
+            return calls["count"] > 1
+
+        report = run_scan(config, should_stop=should_stop)
+
+        self.assertTrue(report.canceled)
+        self.assertLessEqual(report.scanned_chats, 1)
+
 if __name__ == "__main__":
     unittest.main()

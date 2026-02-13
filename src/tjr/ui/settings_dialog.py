@@ -8,12 +8,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QTextEdit,
     QVBoxLayout,
 )
 
-from tjr.core.input_parser import parse_chat_sources_text, parse_search_terms_text
+from tjr.core.input_parser import parse_search_terms_text
 from tjr.storage.config_store import AppConfig, JobProfileSettings, TelegramSettings
 from tjr.ui.smooth_scroll import enable_smooth_wheel_scroll
 
@@ -42,22 +41,6 @@ class SettingsDialog(QDialog):
         self.phone_input.setPlaceholderText("+79990001122")
         form.addRow("Телефон Telegram", self.phone_input)
 
-        self.chats_input = QTextEdit("\n".join(config.selected_chats))
-        self.chats_input.setPlaceholderText(
-            "@chat1 @chat2, https://t.me/channel/123 или с новой строки"
-        )
-        self.chats_input.setMinimumHeight(120)
-        enable_smooth_wheel_scroll(self.chats_input, speed_factor=0.68, duration_ms=110)
-        form.addRow(QLabel("Чаты/ссылки сообщений"), self.chats_input)
-
-        self.title_input = QTextEdit(self._join_terms_for_display(config.job_profile.title_keywords))
-        self.title_input.setPlaceholderText(
-            "Позиции через /, запятую или новую строку: ceo/директор/операционный директор"
-        )
-        self.title_input.setMinimumHeight(90)
-        enable_smooth_wheel_scroll(self.title_input, speed_factor=0.68, duration_ms=110)
-        form.addRow(QLabel("Совпадение по названию"), self.title_input)
-
         self.profile_input = QTextEdit(self._join_terms_for_display(config.job_profile.profile_keywords))
         self.profile_input.setPlaceholderText(
             "Ключевые слова профиля через /, запятую или новую строку"
@@ -74,27 +57,11 @@ class SettingsDialog(QDialog):
         enable_smooth_wheel_scroll(self.industry_input, speed_factor=0.68, duration_ms=110)
         form.addRow(QLabel("Совпадение по отрасли"), self.industry_input)
 
-        self.exclusion_input = QTextEdit(self._join_terms_for_display(config.job_profile.exclusion_phrases))
-        self.exclusion_input.setPlaceholderText(
-            "Исключающие фразы через /, запятую или новую строку: курсы для директора/рекомендую кандидата"
+        info_label = QLabel(
+            "Каналы/чаты, совпадение по названию, глубина и исключения теперь редактируются на главном экране."
         )
-        self.exclusion_input.setMinimumHeight(90)
-        enable_smooth_wheel_scroll(self.exclusion_input, speed_factor=0.68, duration_ms=110)
-        form.addRow(QLabel("Исключить, если есть фраза"), self.exclusion_input)
-
-        self.min_score_input = QSpinBox()
-        self.min_score_input.setRange(1, 3)
-        self.min_score_input.setValue(config.job_profile.min_match_score)
-        self.min_score_input.setToolTip(
-            "1 = достаточно совпадения по одному активному блоку, 3 = совпасть должны все три блока"
-        )
-        form.addRow("Минимальный порог совпадения", self.min_score_input)
-
-        self.scan_depth_days_input = QSpinBox()
-        self.scan_depth_days_input.setRange(1, 365)
-        self.scan_depth_days_input.setValue(config.scan_depth_days)
-        self.scan_depth_days_input.setToolTip("За сколько последних дней искать сообщения")
-        form.addRow("Глубина поиска (дней назад)", self.scan_depth_days_input)
+        info_label.setWordWrap(True)
+        form.addRow("Быстрые настройки", info_label)
 
         root.addLayout(form)
 
@@ -130,15 +97,15 @@ class SettingsDialog(QDialog):
 
         updated = AppConfig(
             telegram=TelegramSettings(api_id=api_id, api_hash=api_hash, phone_number=phone_number),
-            selected_chats=parse_chat_sources_text(self.chats_input.toPlainText()),
+            selected_chats=self._config.selected_chats,
             job_profile=JobProfileSettings(
-                title_keywords=parse_search_terms_text(self.title_input.toPlainText()),
+                title_keywords=self._config.job_profile.title_keywords,
                 profile_keywords=parse_search_terms_text(self.profile_input.toPlainText()),
                 industry_keywords=parse_search_terms_text(self.industry_input.toPlainText()),
-                exclusion_phrases=parse_search_terms_text(self.exclusion_input.toPlainText()),
-                min_match_score=self.min_score_input.value(),
+                exclusion_phrases=self._config.job_profile.exclusion_phrases,
+                min_match_score=self._config.job_profile.min_match_score,
             ),
-            scan_depth_days=self.scan_depth_days_input.value(),
+            scan_depth_days=self._config.scan_depth_days,
             banned_message_links=self._config.banned_message_links,
         )
 

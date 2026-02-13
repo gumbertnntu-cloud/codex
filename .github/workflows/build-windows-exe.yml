@@ -1,7 +1,13 @@
 name: Build Windows EXE
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -41,3 +47,13 @@ jobs:
           name: TJR-empty-config-template
           path: release/empty-config.json
           retention-days: 14
+
+      - name: Publish GitHub Release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TJR ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/TJR.exe
+            release/empty-config.json

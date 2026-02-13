@@ -17,6 +17,7 @@ from tjr.storage.app_paths import session_path
 from tjr.storage.config_store import AppConfig
 
 logger = logging.getLogger(__name__)
+_FIXED_MIN_MATCH_SCORE = 1
 
 
 @dataclass(slots=True)
@@ -41,6 +42,7 @@ class ScanReport:
     scanned_chats: int
     scanned_messages: int
     matched_records: list[MatchRecord]
+    canceled: bool = False
 
 
 @dataclass(slots=True)
@@ -53,6 +55,7 @@ class ParsedSource:
 CodeProvider = Callable[[], str | None]
 PasswordProvider = Callable[[], str | None]
 ProgressCallback = Callable[["ScanProgress"], None]
+StopCheck = Callable[[], bool]
 
 
 @dataclass(slots=True)
@@ -64,6 +67,7 @@ class ScanProgress:
     total_chats: int
     scanned_messages: int
     matched_count: int
+    latest_match: MatchRecord | None = None
 
 _MESSAGE_LINK_RE = re.compile(r"^https?://t\.me/(?P<chat>[^/]+)/(?P<msg_id>\d+)/?$", re.IGNORECASE)
 _PRIVATE_LINK_RE = re.compile(r"^https?://t\.me/c/(?P<chat_id>\d+)/(?P<msg_id>\d+)/?$", re.IGNORECASE)
@@ -75,6 +79,7 @@ def run_scan(
     request_code: CodeProvider | None = None,
     request_password: PasswordProvider | None = None,
     progress_callback: ProgressCallback | None = None,
+    should_stop: StopCheck | None = None,
 ) -> ScanReport:
     state = _telegram_credentials_state(config)
     if state == "complete":
@@ -84,11 +89,12 @@ def run_scan(
                 request_code=request_code,
                 request_password=request_password,
                 progress_callback=progress_callback,
+                should_stop=should_stop,
             )
         )
     if state == "partial":
         raise RuntimeError("Для реального скана заполните Telegram API ID, API Hash и номер телефона.")
-    return _run_demo_scan(config, progress_callback=progress_callback)
+    return _run_demo_scan(config, progress_callback=progress_callback, should_stop=should_stop)
 
 
 def _telegram_credentials_state(config: AppConfig) -> str:
@@ -107,6 +113,7 @@ async def _run_real_scan(
     request_code: CodeProvider | None,
     request_password: PasswordProvider | None,
     progress_callback: ProgressCallback | None,
+    should_stop: StopCheck | None,
 ) -> ScanReport:
     now = datetime.now()
     cutoff_dt = now - timedelta(days=config.scan_depth_days)
@@ -130,11 +137,12 @@ async def _run_real_scan(
     scanned_chats = 0
     scanned_messages = 0
     matches: list[MatchRecord] = []
+    canceled = False
     active_criteria_count = _active_criteria_count(config)
-    effective_threshold = _effective_threshold(config.job_profile.min_match_score, active_criteria_count)
+    effective_threshold = _effective_threshold(_FIXED_MIN_MATCH_SCORE, active_criteria_count)
     logger.info(
-        "Threshold setup | configured=%s/3 | active=%s | effective=%s/%s",
-        config.job_profile.min_match_score,
+        "Threshold setup | mode=fixed | value=%s/3 | active=%s | effective=%s/%s",
+        _FIXED_MIN_MATCH_SCORE,
         active_criteria_count,
         effective_threshold,
         max(1, active_criteria_count),
@@ -153,6 +161,9 @@ async def _run_real_scan(
 
         total_chats = len(sources)
         for source_index, source in enumerate(sources, start=1):
+            if _is_stop_requested(should_stop):
+                canceled = True
+                break
             _emit_progress(
                 progress_callback,
                 ScanProgress(
@@ -186,12 +197,15 @@ async def _run_real_scan(
             )
 
             try:
-                messages = await _load_messages_for_source(client, entity, source, cutoff_dt)
+                messages = await _load_messages_for_source(client, entity, source, cutoff_dt, should_stop)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Source read failed via Telegram API: %s | %s", source.raw_source, exc)
                 continue
 
             for msg in messages:
+                if _is_stop_requested(should_stop):
+                    canceled = True
+                    break
                 if msg is None:
                     continue
 
@@ -227,6 +241,7 @@ async def _run_real_scan(
                             total_chats=total_chats,
                             scanned_messages=scanned_messages,
                             matched_count=len(matches),
+                            latest_match=match_record,
                         ),
                     )
 
@@ -256,6 +271,8 @@ async def _run_real_scan(
                     matched_count=len(matches),
                 ),
             )
+            if canceled:
+                break
     finally:
         await client.disconnect()
 
@@ -268,6 +285,7 @@ async def _run_real_scan(
         scanned_chats=scanned_chats,
         scanned_messages=scanned_messages,
         matched_records=deduped_matches,
+        canceled=canceled,
     )
 
 
@@ -319,7 +337,13 @@ async def _resolve_source_entity(client: TelegramClient, source: ParsedSource):
     return entity, str(name)
 
 
-async def _load_messages_for_source(client: TelegramClient, entity, source: ParsedSource, cutoff_dt: datetime):
+async def _load_messages_for_source(
+    client: TelegramClient,
+    entity,
+    source: ParsedSource,
+    cutoff_dt: datetime,
+    should_stop: StopCheck | None,
+):
     if source.message_id is not None:
         message = await client.get_messages(entity, ids=source.message_id)
         if message is None:
@@ -330,6 +354,8 @@ async def _load_messages_for_source(client: TelegramClient, entity, source: Pars
 
     loaded: list = []
     async for message in client.iter_messages(entity, limit=2000):
+        if _is_stop_requested(should_stop):
+            break
         if message is None:
             continue
         message_dt = message.date.replace(tzinfo=None) if message.date else datetime.now()
@@ -431,7 +457,12 @@ def _evaluate_candidate_message(
     )
 
 
-def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | None) -> ScanReport:
+def _run_demo_scan(
+    config: AppConfig,
+    *,
+    progress_callback: ProgressCallback | None,
+    should_stop: StopCheck | None,
+) -> ScanReport:
     now = datetime.now()
     cutoff_dt = now - timedelta(days=config.scan_depth_days)
     expanded_sources = parse_chat_sources_list(config.selected_chats)
@@ -445,13 +476,15 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
     messages = _build_demo_messages(expanded_sources)
     banned_links = {link.strip().lower() for link in config.banned_message_links if link.strip()}
 
+    scanned_chats = 0
     scanned_messages = 0
     matches: list[MatchRecord] = []
+    canceled = False
     active_criteria_count = _active_criteria_count(config)
-    effective_threshold = _effective_threshold(config.job_profile.min_match_score, active_criteria_count)
+    effective_threshold = _effective_threshold(_FIXED_MIN_MATCH_SCORE, active_criteria_count)
     logger.info(
-        "Threshold setup | configured=%s/3 | active=%s | effective=%s/%s",
-        config.job_profile.min_match_score,
+        "Threshold setup | mode=fixed | value=%s/3 | active=%s | effective=%s/%s",
+        _FIXED_MIN_MATCH_SCORE,
         active_criteria_count,
         effective_threshold,
         max(1, active_criteria_count),
@@ -459,6 +492,10 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
 
     total_chats = len(messages)
     for chat_index, (chat_name, chat_messages) in enumerate(messages.items(), start=1):
+        if _is_stop_requested(should_stop):
+            canceled = True
+            break
+        scanned_chats += 1
         _emit_progress(
             progress_callback,
             ScanProgress(
@@ -473,6 +510,9 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
         )
         logger.info("Scanning chat: %s", chat_name)
         for message in chat_messages:
+            if _is_stop_requested(should_stop):
+                canceled = True
+                break
             if message.published_at < cutoff_dt:
                 continue
 
@@ -533,6 +573,7 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
                         total_chats=total_chats,
                         scanned_messages=scanned_messages,
                         matched_count=len(matches),
+                        latest_match=matches[-1],
                     ),
                 )
 
@@ -562,6 +603,8 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
                 matched_count=len(matches),
             ),
         )
+        if canceled:
+            break
 
     deduped_matches = _dedupe_match_records(matches)
     removed_duplicates = len(matches) - len(deduped_matches)
@@ -569,9 +612,10 @@ def _run_demo_scan(config: AppConfig, *, progress_callback: ProgressCallback | N
         logger.info("Deduplicated matches | removed=%s", removed_duplicates)
 
     return ScanReport(
-        scanned_chats=len(messages),
+        scanned_chats=scanned_chats,
         scanned_messages=scanned_messages,
         matched_records=deduped_matches,
+        canceled=canceled,
     )
 
 
@@ -654,6 +698,16 @@ def _match_record_key(record: MatchRecord) -> str:
     channel = record.channel.strip().lower()
     text = record.text.strip().lower()
     return f"text:{channel}|{record.published_at.isoformat()}|{text}"
+
+
+def _is_stop_requested(should_stop: StopCheck | None) -> bool:
+    if should_stop is None:
+        return False
+    try:
+        return bool(should_stop())
+    except Exception:  # noqa: BLE001
+        logger.exception("Stop callback failed")
+        return False
 
 
 def _emit_progress(progress_callback: ProgressCallback | None, progress: ScanProgress) -> None:

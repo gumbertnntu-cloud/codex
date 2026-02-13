@@ -40,26 +40,30 @@ class SettingsDialogSmokeTests(unittest.TestCase):
         self.assertEqual(dialog.api_id_input.text(), "12345")
         self.assertEqual(dialog.api_hash_input.text(), "secret_hash")
         self.assertEqual(dialog.phone_input.text(), "+79990000000")
-        self.assertIn("@chat_one", dialog.chats_input.toPlainText())
-        self.assertEqual(dialog.min_score_input.value(), 2)
-        self.assertIn("/", dialog.title_input.toPlainText())
-        self.assertIn("курсы для директора", dialog.exclusion_input.toPlainText())
-        self.assertTrue(hasattr(dialog.chats_input, "_smooth_wheel_scroller"))
-        self.assertTrue(hasattr(dialog.title_input, "_smooth_wheel_scroller"))
+        self.assertIn("fastapi", dialog.profile_input.toPlainText())
+        self.assertIn("fintech", dialog.industry_input.toPlainText())
+        self.assertTrue(hasattr(dialog.profile_input, "_smooth_wheel_scroller"))
+        self.assertTrue(hasattr(dialog.industry_input, "_smooth_wheel_scroller"))
 
         dialog.close()
 
     def test_settings_dialog_save_updates_config(self) -> None:
-        dialog = SettingsDialog(config=AppConfig())
+        dialog = SettingsDialog(
+            config=AppConfig(
+                selected_chats=["@new_chat", "https://t.me/chat/1"],
+                job_profile=JobProfileSettings(
+                    title_keywords=["backend", "director"],
+                    exclusion_phrases=["курсы для директора", "рекомендую кандидата"],
+                    min_match_score=1,
+                ),
+                scan_depth_days=45,
+            )
+        )
         dialog.api_id_input.setText("54321")
         dialog.api_hash_input.setText("myhash123")
         dialog.phone_input.setText("+79991112233")
-        dialog.chats_input.setPlainText("@new_chat, https://t.me/chat/1")
-        dialog.title_input.setPlainText("backend, director")
         dialog.profile_input.setPlainText("senior")
         dialog.industry_input.setPlainText("fintech")
-        dialog.exclusion_input.setPlainText("курсы для директора/рекомендую кандидата")
-        dialog.min_score_input.setValue(3)
 
         dialog._handle_save()
 
@@ -72,20 +76,23 @@ class SettingsDialogSmokeTests(unittest.TestCase):
             dialog.config.job_profile.exclusion_phrases,
             ["курсы для директора", "рекомендую кандидата"],
         )
-        self.assertEqual(dialog.config.job_profile.min_match_score, 3)
+        self.assertEqual(dialog.config.job_profile.profile_keywords, ["senior"])
+        self.assertEqual(dialog.config.job_profile.industry_keywords, ["fintech"])
+        self.assertEqual(dialog.config.job_profile.min_match_score, 1)
+        self.assertEqual(dialog.config.scan_depth_days, 45)
 
         dialog.close()
 
     def test_settings_dialog_keeps_slash_style_on_reopen(self) -> None:
         first_dialog = SettingsDialog(config=AppConfig())
-        first_dialog.title_input.setPlainText("ceo/исполнительный директор/операционный директор")
+        first_dialog.profile_input.setPlainText("go/системный анализ/product")
         first_dialog._handle_save()
         self.assertEqual(first_dialog.result(), SettingsDialog.DialogCode.Accepted)
 
         second_dialog = SettingsDialog(config=first_dialog.config)
         self.assertEqual(
-            second_dialog.title_input.toPlainText(),
-            "ceo / исполнительный директор / операционный директор",
+            second_dialog.profile_input.toPlainText(),
+            "go / системный анализ / product",
         )
 
         first_dialog.close()
@@ -110,6 +117,9 @@ class MainWindowSmokeTests(unittest.TestCase):
         self.assertIn("Telegram настроен: да", summary)
         self.assertFalse(window.open_last_report_button.isEnabled())
         self.assertEqual(window.live_matches_value_label.text(), "0")
+        self.assertEqual(window.settings_button.text(), "Настройки")
+        self.assertEqual(window.open_last_report_button.text(), "Отчет")
+        self.assertEqual(window.depth_days_value_label.text(), "14")
         window.close()
 
     def test_main_window_updates_live_match_counter_on_progress(self) -> None:
@@ -118,9 +128,6 @@ class MainWindowSmokeTests(unittest.TestCase):
                 return
 
         window = MainWindow(config_store=_DummyConfigStore(), config=AppConfig())
-        window._scan_progress_row = 0
-        window.results_list.clear()
-        window.results_list.addItem("progress")
         window._on_scan_progress(
             ScanProgress(
                 phase="message_progress",
@@ -133,6 +140,71 @@ class MainWindowSmokeTests(unittest.TestCase):
             )
         )
         self.assertEqual(window.live_matches_value_label.text(), "3")
+        window.close()
+
+    def test_main_window_applies_quick_settings(self) -> None:
+        class _DummyConfigStore:
+            def save(self, _config: AppConfig) -> None:
+                return
+
+        window = MainWindow(config_store=_DummyConfigStore(), config=AppConfig())
+        window.quick_chats_input.setPlainText("@a\n@b")
+        window.quick_title_input.setPlainText("ceo/директор")
+        window.quick_depth_input.setValue(21)
+        window.quick_exclusion_input.setPlainText("курс для директора/рекомендую кандидата")
+
+        window._apply_quick_settings_inputs(show_feedback=False)
+
+        self.assertEqual(window._config.selected_chats, ["@a", "@b"])
+        self.assertEqual(window._config.job_profile.title_keywords, ["ceo", "директор"])
+        self.assertEqual(
+            window._config.job_profile.exclusion_phrases,
+            ["курс для директора", "рекомендую кандидата"],
+        )
+        self.assertEqual(window._config.scan_depth_days, 21)
+        self.assertEqual(window.depth_days_value_label.text(), "21")
+        window.close()
+
+    def test_main_window_appends_match_to_live_feed(self) -> None:
+        class _DummyConfigStore:
+            def save(self, _config: AppConfig) -> None:
+                return
+
+        match_result = MatchResult(
+            score=1,
+            active_criteria_count=1,
+            excluded=False,
+            matched_title=True,
+            matched_profile=False,
+            matched_industry=False,
+            matched_title_terms=["директор"],
+            matched_profile_terms=[],
+            matched_industry_terms=[],
+            matched_exclusion_terms=[],
+        )
+        record = MatchRecord(
+            channel="@jobs",
+            published_at=datetime(2026, 1, 3, 12, 0, 0),
+            text="message text",
+            link="https://t.me/jobs/1",
+            match_result=match_result,
+        )
+
+        window = MainWindow(config_store=_DummyConfigStore(), config=AppConfig())
+        window._on_scan_progress(
+            ScanProgress(
+                phase="match_found",
+                current_chat="@jobs",
+                current_chat_index=1,
+                completed_chats=0,
+                total_chats=1,
+                scanned_messages=1,
+                matched_count=1,
+                latest_match=record,
+            )
+        )
+        self.assertEqual(window.preview_table.rowCount(), 1)
+        self.assertEqual(window.preview_table.item(0, 2).text(), "Open")
         window.close()
 
     def test_main_window_opens_cached_report(self) -> None:
