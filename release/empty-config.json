@@ -1,0 +1,17 @@
+{
+  "telegram": {
+    "api_id": "",
+    "api_hash": "",
+    "phone_number": ""
+  },
+  "selected_chats": [],
+  "job_profile": {
+    "title_keywords": [],
+    "profile_keywords": [],
+    "industry_keywords": [],
+    "exclusion_phrases": [],
+    "min_match_score": 2
+  },
+  "scan_depth_days": 14,
+  "banned_message_links": []
+}

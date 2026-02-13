@@ -1,0 +1,43 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+
+      - name: Build onefile EXE
+        shell: pwsh
+        run: |
+          pyinstaller --clean --noconfirm TJR_windows.spec
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TJR-windows-exe
+          path: dist/TJR.exe
+          retention-days: 14
+
+      - name: Upload empty config template
+        uses: actions/upload-artifact@v4
+        with:
+          name: TJR-empty-config-template
+          path: release/empty-config.json
+          retention-days: 14

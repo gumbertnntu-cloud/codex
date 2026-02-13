@@ -1,0 +1,61 @@
+Metadata-Version: 2.4
+Name: tjr
+Version: 0.1.0
+Summary: Telegram Job Radar macOS desktop app
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: PySide6>=6.7.0
+Requires-Dist: Telethon>=1.36.0
+Requires-Dist: pymorphy3>=2.0.2
+Requires-Dist: openpyxl>=3.1.5
+
+# TJR (Telegram Job Radar for macOS)
+
+Desktop-приложение для macOS с GUI, которое подключается к Telegram под учеткой пользователя, сканирует выбранные чаты/группы и находит релевантные предложения по работе.
+
+## Что уже есть
+- Базовое GUI-приложение (`PySide6`).
+- Отдельное окно `Настройки`:
+- Telegram API ID/API Hash.
+- Телефон Telegram.
+- Список чатов/ссылок сообщений для мониторинга.
+- Критерии релевантности: совпадение по названию, профилю, отрасли.
+- Исключающие фразы: если найдены в сообщении, оно не попадет в выдачу.
+- Минимальный порог совпадений (1-3).
+- Поддержка склонений слов (например, `директор` -> `директора`, `директоры`).
+- Отдельное окно найденных совпадений: канал, дата, текст, совпавшие слова, ссылка на сообщение.
+- В окне результатов:
+- кликабельные ссылки;
+- ручное изменение ширины столбцов;
+- переключаемая сортировка по дате (новые/старые);
+- экспорт в Excel (`.xlsx`).
+- Локальное сохранение настроек в `~/Library/Application Support/TJR/config.json`.
+- Подробные логи сканирования в `~/Library/Application Support/TJR/logs/app.log`.
+- При каждом новом поиске лог автоматически очищается.
+
+## Формат ввода в настройках
+- Чаты/ссылки сообщений: можно вводить через запятую, `;` или перенос строки.
+- Ключевые слова/позиции: можно вводить через `/`, запятую, `;` или перенос строки.
+- Исключающие фразы: можно вводить через `/`, запятую, `;` или перенос строки.
+
+## Быстрый старт
+```bash
+cd /Users/steshinaleksandr/ai-sufler/TJR
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+python -m tjr
+```
+
+## Сборка macOS .app
+```bash
+cd /Users/steshinaleksandr/ai-sufler/TJR
+./scripts/build_mac_app.sh
+```
+
+После успешной сборки приложение будет в:
+`/Users/steshinaleksandr/ai-sufler/TJR/dist/TJR.app`
+
+См. план: `docs/PROJECT_PLAN.md`.
+Ролевой протокол и сессии: `docs/ROLE_ROOM.md`.
+Бэклог развития: `docs/BACKLOG.md`.

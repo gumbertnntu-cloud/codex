@@ -1,0 +1,2 @@
+[console_scripts]
+tjr = tjr.main:run
