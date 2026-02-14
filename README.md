@@ -54,6 +54,10 @@ cd /Users/steshinaleksandr/ai-sufler/TJR
 После успешной сборки приложение будет в:
 `/Users/steshinaleksandr/ai-sufler/TJR/dist/TJR.app`
 
+Готовый релиз для пользователей macOS:
+- `TJR-macOS.zip` в GitHub Releases (тег `v2`).
+- Инструкция: `docs/TJR_MACOS_QUICK_START_RU.md`.
+
 ## Сборка Windows .exe (onefile)
 Выполняется на Windows (PowerShell):
 ```powershell
