@@ -104,7 +104,7 @@ class MainWindowSmokeTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._app = _ensure_app()
 
-    def test_main_window_summary_shows_telegram_config_state(self) -> None:
+    def test_main_window_defaults_match_current_layout(self) -> None:
         class _DummyConfigStore:
             def save(self, _config: AppConfig) -> None:
                 return
@@ -113,13 +113,14 @@ class MainWindowSmokeTests(unittest.TestCase):
             config_store=_DummyConfigStore(),
             config=AppConfig(telegram=TelegramSettings(api_id="1", api_hash="abcdefgh")),
         )
-        summary = window.summary_label.text()
-        self.assertIn("Telegram настроен: да", summary)
         self.assertFalse(window.open_last_report_button.isEnabled())
         self.assertEqual(window.live_matches_value_label.text(), "0")
         self.assertEqual(window.settings_button.text(), "Настройки")
         self.assertEqual(window.open_last_report_button.text(), "Отчет")
         self.assertEqual(window.depth_days_value_label.text(), "14")
+        self.assertEqual(window.scan_status_value_label.text(), "Chat - / -")
+        self.assertEqual(window.scan_status_detail_label.text(), "Готово к запуску")
+        self.assertEqual(window.sort_toggle_button.text(), "Сортировка: Дата ↓")
         window.close()
 
     def test_main_window_updates_live_match_counter_on_progress(self) -> None:
@@ -204,7 +205,44 @@ class MainWindowSmokeTests(unittest.TestCase):
             )
         )
         self.assertEqual(window.preview_table.rowCount(), 1)
-        self.assertEqual(window.preview_table.item(0, 2).text(), "Open")
+        self.assertEqual(window.preview_table.item(0, 3).text(), "Open")
+        window.close()
+
+    def test_main_window_feed_ban_button_toggles_ban_list(self) -> None:
+        class _DummyConfigStore:
+            def save(self, _config: AppConfig) -> None:
+                return
+
+        match_result = MatchResult(
+            score=1,
+            active_criteria_count=1,
+            excluded=False,
+            matched_title=True,
+            matched_profile=False,
+            matched_industry=False,
+            matched_title_terms=["директор"],
+            matched_profile_terms=[],
+            matched_industry_terms=[],
+            matched_exclusion_terms=[],
+        )
+        record = MatchRecord(
+            channel="@jobs",
+            published_at=datetime(2026, 1, 3, 12, 0, 0),
+            text="message text",
+            link="https://t.me/jobs/1",
+            match_result=match_result,
+        )
+
+        window = MainWindow(config_store=_DummyConfigStore(), config=AppConfig())
+        window._refresh_preview_table([record])
+
+        ban_button = window.preview_table.cellWidget(0, 0)
+        self.assertIsNotNone(ban_button)
+        self.assertNotIn(record.link, window._config.banned_message_links)
+        ban_button.click()
+        self.assertIn(record.link, window._config.banned_message_links)
+        ban_button.click()
+        self.assertNotIn(record.link, window._config.banned_message_links)
         window.close()
 
     def test_main_window_opens_cached_report(self) -> None:

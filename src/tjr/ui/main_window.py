@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -101,6 +103,7 @@ class MainWindow(QMainWindow):
         self._live_feed_records: list[MatchRecord] = []
         self._scan_started_at: float = 0.0
         self._live_matches_count: int = 0
+        self._preview_sort_descending: bool = True
         self._cancel_scan_requested = False
         self._is_scanning = False
 
@@ -181,21 +184,26 @@ class MainWindow(QMainWindow):
         enable_smooth_wheel_scroll(self.quick_exclusion_input, speed_factor=0.68, duration_ms=110)
         quick_settings_layout.addWidget(self.quick_exclusion_input)
 
-        apply_quick_settings_button = QPushButton("Применить")
-        apply_quick_settings_button.setObjectName("GhostButton")
-        apply_quick_settings_button.clicked.connect(self._apply_quick_settings_inputs)
-        quick_settings_layout.addWidget(apply_quick_settings_button, alignment=Qt.AlignLeft)
+        self.apply_quick_settings_button = QPushButton("Применить")
+        self.apply_quick_settings_button.setObjectName("GhostButton")
+        self.apply_quick_settings_button.setMinimumWidth(132)
+        self.apply_quick_settings_button.setFixedHeight(48)
+        self.apply_quick_settings_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.apply_quick_settings_button.clicked.connect(self._apply_quick_settings_inputs)
+        quick_settings_layout.addWidget(self.apply_quick_settings_button, alignment=Qt.AlignLeft)
         left_layout.addWidget(quick_settings_card)
 
         left_layout.addStretch(1)
 
         self.run_button = QPushButton("Start Scan")
         self.run_button.setObjectName("StartButton")
+        self.run_button.setFixedHeight(66)
         self.run_button.clicked.connect(self._run_chat_scan)
         left_layout.addWidget(self.run_button)
 
         self.stop_button = QPushButton("Stop Scan")
         self.stop_button.setObjectName("StopButton")
+        self.stop_button.setFixedHeight(60)
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._request_stop_scan)
         left_layout.addWidget(self.stop_button)
@@ -211,7 +219,7 @@ class MainWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(14, 8, 14, 8)
 
-        main_title = QLabel("Main Control")
+        main_title = QLabel("Telegram Job Radar")
         main_title.setObjectName("MainTitle")
         header_layout.addWidget(main_title)
         header_layout.addStretch(1)
@@ -243,16 +251,11 @@ class MainWindow(QMainWindow):
         self.live_matches_value_label = QLabel("0")
         self.live_matches_value_label.setAlignment(Qt.AlignLeft)
         counter_font = self.live_matches_value_label.font()
-        counter_font.setPointSize(90)
+        counter_font.setPointSize(64)
         counter_font.setBold(True)
         self.live_matches_value_label.setFont(counter_font)
         self.live_matches_value_label.setObjectName("LiveCounter")
         hero_counter_layout.addWidget(self.live_matches_value_label)
-
-        self.live_matches_hint_label = QLabel("Vacancies matched right now")
-        self.live_matches_hint_label.setAlignment(Qt.AlignLeft)
-        self.live_matches_hint_label.setObjectName("LiveCounterHint")
-        hero_counter_layout.addWidget(self.live_matches_hint_label)
         hero_counter_layout.addStretch(1)
 
         hero_row.addWidget(hero_counter, stretch=2)
@@ -273,6 +276,8 @@ class MainWindow(QMainWindow):
         self.scan_status_detail_label = QLabel("Готово к запуску")
         self.scan_status_detail_label.setObjectName("StatusSecondary")
         self.scan_status_detail_label.setWordWrap(True)
+        self.scan_status_detail_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.scan_status_detail_label.setFixedHeight(52)
         hero_status_layout.addWidget(self.scan_status_detail_label)
         hero_status_layout.addStretch(1)
 
@@ -298,14 +303,26 @@ class MainWindow(QMainWindow):
         feed_layout.setContentsMargins(16, 12, 16, 16)
         feed_layout.setSpacing(10)
 
+        feed_header = QHBoxLayout()
+        feed_header.setContentsMargins(0, 0, 0, 0)
+        feed_header.setSpacing(10)
+
         feed_title = QLabel("MATCH FEED")
         feed_title.setObjectName("HeroTitle")
-        feed_layout.addWidget(feed_title)
+        feed_header.addWidget(feed_title)
+        feed_header.addStretch(1)
+
+        self.sort_toggle_button = QPushButton()
+        self.sort_toggle_button.setObjectName("SortToggleButton")
+        self.sort_toggle_button.setFixedSize(250, 30)
+        self.sort_toggle_button.clicked.connect(self._toggle_preview_sort)
+        feed_header.addWidget(self.sort_toggle_button)
+        feed_layout.addLayout(feed_header)
 
         self.preview_table = QTableWidget()
         self.preview_table.setObjectName("FeedTable")
-        self.preview_table.setColumnCount(5)
-        self.preview_table.setHorizontalHeaderLabels(["DATE", "MESSAGE", "LINK", "CHANNEL", "MATCHES"])
+        self.preview_table.setColumnCount(6)
+        self.preview_table.setHorizontalHeaderLabels(["", "DATE", "MESSAGE", "LINK", "CHANNEL", "MATCHES"])
         self.preview_table.verticalHeader().setVisible(False)
         self.preview_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.preview_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -313,11 +330,12 @@ class MainWindow(QMainWindow):
         self.preview_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.preview_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.preview_table.setColumnWidth(0, 155)
-        self.preview_table.setColumnWidth(1, 460)
-        self.preview_table.setColumnWidth(2, 140)
-        self.preview_table.setColumnWidth(3, 150)
-        self.preview_table.setColumnWidth(4, 190)
+        self.preview_table.setColumnWidth(0, 38)
+        self.preview_table.setColumnWidth(1, 155)
+        self.preview_table.setColumnWidth(2, 430)
+        self.preview_table.setColumnWidth(3, 140)
+        self.preview_table.setColumnWidth(4, 150)
+        self.preview_table.setColumnWidth(5, 190)
         self.preview_table.cellClicked.connect(self._on_preview_cell_clicked)
         enable_smooth_wheel_scroll(self.preview_table, speed_factor=0.73, duration_ms=110)
 
@@ -330,6 +348,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Готово")
         self._populate_quick_settings_inputs()
         self._refresh_left_hero_art()
+        self._update_sort_toggle_text()
         self._refresh_preview_table([])
 
     def _open_settings(self) -> None:
@@ -601,7 +620,7 @@ class MainWindow(QMainWindow):
         return self._cancel_scan_requested
 
     def _on_preview_cell_clicked(self, row: int, column: int) -> None:
-        if column != 2:
+        if column != 3:
             return
         item = self.preview_table.item(row, column)
         if item is None:
@@ -610,13 +629,23 @@ class MainWindow(QMainWindow):
         if isinstance(link, str) and link:
             QDesktopServices.openUrl(QUrl(link))
 
+    def _toggle_preview_sort(self) -> None:
+        self._preview_sort_descending = not self._preview_sort_descending
+        self._update_sort_toggle_text()
+        self._refresh_preview_table(self._live_feed_records)
+
+    def _update_sort_toggle_text(self) -> None:
+        arrow = "↓" if self._preview_sort_descending else "↑"
+        self.sort_toggle_button.setText(f"Сортировка: Дата {arrow}")
+
     def _refresh_preview_table(self, records: list[MatchRecord]) -> None:
-        ordered = sorted(records, key=lambda item: item.published_at, reverse=True)
+        ordered = sorted(records, key=lambda item: item.published_at, reverse=self._preview_sort_descending)
         visible = ordered[:40]
         self.preview_table.clearContents()
         self.preview_table.setRowCount(len(visible))
 
         for row, record in enumerate(visible):
+            ban_button = self._build_feed_ban_button(record.link)
             dt_item = QTableWidgetItem(record.published_at.strftime("%Y-%m-%d %H:%M"))
             message_item = QTableWidgetItem(self._compact_message(record.text))
             message_item.setToolTip(record.text)
@@ -634,12 +663,48 @@ class MainWindow(QMainWindow):
             matches_item = QTableWidgetItem(self._compact_terms(record))
             matches_item.setForeground(QBrush(QColor("#7de0bb")))
 
-            self.preview_table.setItem(row, 0, dt_item)
-            self.preview_table.setItem(row, 1, message_item)
-            self.preview_table.setItem(row, 2, link_item)
-            self.preview_table.setItem(row, 3, channel_item)
-            self.preview_table.setItem(row, 4, matches_item)
+            self.preview_table.setCellWidget(row, 0, ban_button)
+            self.preview_table.setItem(row, 1, dt_item)
+            self.preview_table.setItem(row, 2, message_item)
+            self.preview_table.setItem(row, 3, link_item)
+            self.preview_table.setItem(row, 4, channel_item)
+            self.preview_table.setItem(row, 5, matches_item)
             self.preview_table.resizeRowToContents(row)
+
+    def _build_feed_ban_button(self, link: str) -> QPushButton:
+        button = QPushButton("🗑")
+        button.setObjectName("FeedBanButton")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setCheckable(True)
+        button.setFixedSize(20, 20)
+        button.setFocusPolicy(Qt.NoFocus)
+
+        normalized = link.strip()
+        is_banned = bool(normalized and normalized in self._config.banned_message_links)
+        button.setChecked(is_banned)
+
+        opacity_effect = QGraphicsOpacityEffect(button)
+        button.setGraphicsEffect(opacity_effect)
+        self._set_feed_ban_button_visual(button, is_banned)
+
+        if not normalized:
+            button.setEnabled(False)
+            return button
+
+        button.clicked.connect(
+            lambda checked, url=normalized, btn=button: self._toggle_ban_from_feed(url, checked, btn)
+        )
+        return button
+
+    def _set_feed_ban_button_visual(self, button: QPushButton, is_banned: bool) -> None:
+        effect = button.graphicsEffect()
+        if isinstance(effect, QGraphicsOpacityEffect):
+            effect.setOpacity(1.0 if is_banned else 0.35)
+        button.setToolTip("Убрать из бан-листа" if is_banned else "Добавить в бан-лист")
+
+    def _toggle_ban_from_feed(self, link: str, is_banned: bool, button: QPushButton) -> None:
+        self._ban_message_link(link, is_banned)
+        self._set_feed_ban_button_visual(button, is_banned)
 
     def _set_live_matches_count(self, value: int) -> None:
         self._live_matches_count = max(0, value)
@@ -742,6 +807,7 @@ class MainWindow(QMainWindow):
                 padding: 8px 16px;
                 font-size: 13px;
                 font-weight: 700;
+                text-align: center;
             }
             #GhostButton:disabled {
                 color: #63809b;
@@ -755,10 +821,16 @@ class MainWindow(QMainWindow):
                 padding: 12px 16px;
                 font-size: 17px;
                 font-weight: 800;
+                text-align: center;
             }
             #StartButton:disabled {
                 background: #25644d;
                 color: #9fd0ba;
+            }
+            #StartButton:pressed {
+                background: #19B37D;
+                color: #021912;
+                padding-top: 14px;
             }
             #StopButton {
                 background: #17314a;
@@ -768,10 +840,16 @@ class MainWindow(QMainWindow):
                 padding: 12px 16px;
                 font-size: 16px;
                 font-weight: 700;
+                text-align: center;
             }
             #StopButton:disabled {
-                background: #112638;
-                color: #6f8ea9;
+                background: #7B4856;
+                color: #E6D9DE;
+            }
+            #StopButton:pressed {
+                background: #7F4150;
+                color: #F2E7EA;
+                padding-top: 14px;
             }
             #HeroCounter, #HeroStatus, #MetricCard, #FeedCard, #QuickSettingsCard {
                 background: #0f1b2a;
@@ -790,11 +868,6 @@ class MainWindow(QMainWindow):
                 color: #ffffff;
                 font-weight: 900;
             }
-            #LiveCounterHint {
-                color: #b7d6f6;
-                font-size: 20px;
-                font-weight: 600;
-            }
             #StatusPrimary {
                 color: #ffffff;
                 font-size: 18px;
@@ -802,7 +875,7 @@ class MainWindow(QMainWindow):
             }
             #StatusSecondary {
                 color: #a7c2de;
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: 600;
             }
             #MetricTitle {
@@ -851,13 +924,40 @@ class MainWindow(QMainWindow):
             #FeedTable::item {
                 padding: 8px;
             }
+            #SortToggleButton {
+                background: #27496D;
+                color: #EAF2FF;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 700;
+                text-align: center;
+                padding: 0 10px;
+            }
+            #SortToggleButton:hover {
+                background: #31577F;
+            }
+            #FeedBanButton {
+                background: transparent;
+                border: none;
+                color: #A9BCD3;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0;
+            }
+            #FeedBanButton:checked {
+                color: #F08DA0;
+            }
+            #FeedBanButton:hover {
+                color: #D9E5F2;
+            }
             QToolTip {
                 background: #122338;
                 color: #f3f9ff;
                 border: 1px solid #2c4866;
                 padding: 8px 10px;
-                font-size: 16px;
-                font-weight: 600;
+                font-size: 14px;
+                font-weight: 400;
             }
             """
         )
