@@ -5,7 +5,10 @@ a = Analysis(
     ['src/tjr/__main__.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
+    datas=[
+        ('assets/icons/TJR-icon-1024.png', 'assets/icons'),
+        ('assets/illustrations/left-hero-v1.png', 'assets/illustrations'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -45,6 +48,6 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='TJR.app',
-    icon=None,
+    icon='assets/icons/TJR.icns',
     bundle_identifier='com.tjr.desktop',
 )

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QBrush, QColor, QDesktopServices
+from PySide6.QtCore import QRectF, Qt, QUrl
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -37,6 +39,58 @@ from tjr.ui.smooth_scroll import enable_smooth_wheel_scroll
 logger = logging.getLogger(__name__)
 
 
+class RoundedImageLabel(QLabel):
+    def __init__(self, radius: int = 14, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._radius = radius
+        self._source_pixmap = QPixmap()
+        self._fallback_text = "TJR"
+        self.setAlignment(Qt.AlignCenter)
+
+    def set_source_pixmap(self, pixmap: QPixmap) -> None:
+        self._source_pixmap = pixmap
+        self.update()
+
+    def set_fallback_text(self, text: str) -> None:
+        self._fallback_text = text
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(rect, self._radius, self._radius)
+        painter.setClipPath(path)
+
+        if not self._source_pixmap.isNull():
+            src = self._source_pixmap
+            dst_ratio = rect.width() / max(1.0, rect.height())
+            src_ratio = src.width() / max(1, src.height())
+            if src_ratio > dst_ratio:
+                target_h = rect.height()
+                target_w = target_h * src_ratio
+            else:
+                target_w = rect.width()
+                target_h = target_w / src_ratio
+            x = rect.x() + (rect.width() - target_w) / 2.0
+            y = rect.y() + (rect.height() - target_h) / 2.0
+            target = QRectF(x, y, target_w, target_h)
+            painter.drawPixmap(target, src, QRectF(src.rect()))
+            painter.fillRect(rect, QColor(8, 18, 33, 35))
+        else:
+            painter.fillRect(rect, QColor("#0d1826"))
+            painter.setPen(QColor("#7f9dbf"))
+            painter.drawText(rect, Qt.AlignCenter, self._fallback_text)
+
+        painter.setClipping(False)
+        painter.setPen(QPen(QColor("#1a2b3e"), 1))
+        painter.drawRoundedRect(rect, self._radius, self._radius)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, config_store: ConfigStore, config: AppConfig) -> None:
         super().__init__()
@@ -67,17 +121,11 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(18, 18, 18, 18)
         left_layout.setSpacing(12)
 
-        brand = QLabel("TJR")
-        brand.setObjectName("Brand")
-        subtitle = QLabel("Telegram Job Radar")
-        subtitle.setObjectName("BrandSub")
-        left_layout.addWidget(brand)
-        left_layout.addWidget(subtitle)
-
-        self.summary_label = QLabel()
-        self.summary_label.setObjectName("Summary")
-        self.summary_label.setWordWrap(True)
-        left_layout.addWidget(self.summary_label)
+        self.left_hero_art_label = RoundedImageLabel(radius=14)
+        self.left_hero_art_label.setObjectName("LeftHeroArt")
+        self.left_hero_art_label.setMinimumHeight(204)
+        self.left_hero_art_label.setMaximumHeight(204)
+        left_layout.addWidget(self.left_hero_art_label)
 
         quick_settings_card = QFrame()
         quick_settings_card.setObjectName("QuickSettingsCard")
@@ -281,7 +329,7 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Готово")
         self._populate_quick_settings_inputs()
-        self._refresh_summary()
+        self._refresh_left_hero_art()
         self._refresh_preview_table([])
 
     def _open_settings(self) -> None:
@@ -291,27 +339,39 @@ class MainWindow(QMainWindow):
             self._config = dialog.config
             self._config_store.save(self._config)
             self._populate_quick_settings_inputs()
-            self._refresh_summary()
             self.blocked_value_label.setText(str(len(self._config.banned_message_links)))
             self.channels_value_label.setText(str(len(self._config.selected_chats)))
             self.depth_days_value_label.setText(str(self._config.scan_depth_days))
             self.statusBar().showMessage("Настройки сохранены", 3000)
 
-    def _refresh_summary(self) -> None:
-        tg_configured = bool(self._config.telegram.api_id and self._config.telegram.api_hash)
-        self.summary_label.setText(
-            (
-                f"Telegram настроен: {'да' if tg_configured else 'нет'}\n"
-                f"Источников: {len(self._config.selected_chats)}\n"
-                f"Title/Profile/Industry: "
-                f"{len(self._config.job_profile.title_keywords)}/"
-                f"{len(self._config.job_profile.profile_keywords)}/"
-                f"{len(self._config.job_profile.industry_keywords)}\n"
-                f"Исключения: {len(self._config.job_profile.exclusion_phrases)}\n"
-                f"Бан-ссылки: {len(self._config.banned_message_links)}\n"
-                f"Глубина: {self._config.scan_depth_days} дн"
-            )
-        )
+    @staticmethod
+    def _resolve_asset_path(relative_path: str) -> Path | None:
+        relative = Path(relative_path)
+        candidates: list[Path] = []
+        if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                candidates.append(Path(meipass) / relative)
+        candidates.append(Path(__file__).resolve().parents[3] / relative)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _refresh_left_hero_art(self) -> None:
+        asset_path = self._resolve_asset_path("assets/illustrations/left-hero-v1.png")
+        if asset_path is None:
+            self.left_hero_art_label.set_source_pixmap(QPixmap())
+            self.left_hero_art_label.set_fallback_text("TJR")
+            return
+
+        pixmap = QPixmap(str(asset_path))
+        if pixmap.isNull():
+            self.left_hero_art_label.set_source_pixmap(QPixmap())
+            self.left_hero_art_label.set_fallback_text("TJR")
+            return
+
+        self.left_hero_art_label.set_source_pixmap(pixmap)
 
     def _populate_quick_settings_inputs(self) -> None:
         self.quick_chats_input.setPlainText("\n".join(self._config.selected_chats))
@@ -328,7 +388,6 @@ class MainWindow(QMainWindow):
         self._config_store.save(self._config)
 
         self._populate_quick_settings_inputs()
-        self._refresh_summary()
         self.channels_value_label.setText(str(len(self._config.selected_chats)))
         self.blocked_value_label.setText(str(len(self._config.banned_message_links)))
         self.depth_days_value_label.setText(str(self._config.scan_depth_days))
@@ -508,13 +567,11 @@ class MainWindow(QMainWindow):
         if is_banned and normalized not in self._config.banned_message_links:
             self._config.banned_message_links.append(normalized)
             self._config_store.save(self._config)
-            self._refresh_summary()
             self.blocked_value_label.setText(str(len(self._config.banned_message_links)))
             return
         if not is_banned and normalized in self._config.banned_message_links:
             self._config.banned_message_links.remove(normalized)
             self._config_store.save(self._config)
-            self._refresh_summary()
             self.blocked_value_label.setText(str(len(self._config.banned_message_links)))
 
     def _open_last_report(self) -> None:
@@ -643,6 +700,10 @@ class MainWindow(QMainWindow):
         secs = total % 60
         return f"{minutes:02d}:{secs:02d}"
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._refresh_left_hero_art()
+
     def _apply_theme(self) -> None:
         self.setStyleSheet(
             """
@@ -659,20 +720,10 @@ class MainWindow(QMainWindow):
                 background: #0b1420;
                 border-radius: 22px;
             }
-            #Brand {
-                color: #f2f8ff;
-                font-size: 34px;
+            #LeftHeroArt {
+                color: #7f9dbf;
+                font-size: 20px;
                 font-weight: 800;
-            }
-            #BrandSub {
-                color: #7d98b5;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            #Summary {
-                color: #6f8dac;
-                font-size: 11px;
-                line-height: 1.35em;
             }
             #TopBar {
                 background: #121e2d;

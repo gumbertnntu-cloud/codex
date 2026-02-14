@@ -21,6 +21,9 @@ pyinstaller \
   --windowed \
   --name "TJR" \
   --osx-bundle-identifier "com.tjr.desktop" \
+  --icon "assets/icons/TJR.icns" \
+  --add-data "assets/icons/TJR-icon-1024.png:assets/icons" \
+  --add-data "assets/illustrations/left-hero-v1.png:assets/illustrations" \
   --paths "src" \
   "src/tjr/__main__.py"
 
