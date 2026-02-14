@@ -59,13 +59,8 @@ cd /Users/steshinaleksandr/ai-sufler/TJR
 - Инструкция: `docs/TJR_MACOS_QUICK_START_RU.md`.
 
 ## Сборка Windows .exe (onefile)
-Выполняется на Windows (PowerShell):
-```powershell
-cd C:\path\to\TJR
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_exe.ps1
-```
+Готовый релиз для пользователей Windows:
 
-Результат: `dist\TJR.exe`.
 
 По умолчанию приложение стартует с пустым конфигом, если файла конфигурации еще нет.
 Шаблон пустого конфига: `release/empty-config.json`.
@@ -75,4 +70,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_exe.ps1
 Ролевой протокол и сессии: `docs/ROLE_ROOM.md`.
 Бэклог развития: `docs/BACKLOG.md`.
 Быстрый вход в проект с нуля: `docs/START_FROM_ZERO.md`.
-Регламент агентной разработки: `docs/AGENT_WORKFLOW.md`.
+
