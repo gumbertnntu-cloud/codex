@@ -37,22 +37,9 @@ Desktop-приложение для macOS с GUI, которое подключ�
 - Исключающие фразы: можно вводить через `/`, запятую, `;` или перенос строки.
 
 ## Быстрый старт
-```bash
-cd /Users/steshinaleksandr/ai-sufler/TJR
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-python -m tjr
-```
 
-## Сборка macOS .app
-```bash
-cd /Users/steshinaleksandr/ai-sufler/TJR
-./scripts/build_mac_app.sh
-```
+скачай файл для винды или мак и запускай (про файл конфига не забудь)
 
-После успешной сборки приложение будет в:
-`/Users/steshinaleksandr/ai-sufler/TJR/dist/TJR.app`
 
 Готовый релиз для пользователей macOS:
 - `TJR-macOS.zip` в GitHub Releases (тег `v2`).
