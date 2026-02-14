@@ -71,6 +71,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_exe.ps1
 Шаблон пустого конфига: `release/empty-config.json`.
 
 См. план: `docs/PROJECT_PLAN.md`.
+Одностраничное описание проекта: `docs/TJR_ONE_PAGER_RU.md`.
 Ролевой протокол и сессии: `docs/ROLE_ROOM.md`.
 Бэклог развития: `docs/BACKLOG.md`.
 Быстрый вход в проект с нуля: `docs/START_FROM_ZERO.md`.
